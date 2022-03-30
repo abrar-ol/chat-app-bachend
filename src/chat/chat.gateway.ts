@@ -1,3 +1,4 @@
+import { ChatService } from './shared/chat.service';
 /* eslint-disable prettier/prettier */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable prettier/prettier */
@@ -16,32 +17,25 @@ import { Socket } from 'socket.io';
 
 @WebSocketGateway({ cors: true })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect,OnGatewayInit {
-    allMessages:string[]=[];
-    clients:Map<string,string>=new Map<string,string>();
+   constructor(private chatService:ChatService){}
 
   @WebSocketServer() server;
   private readonly logger = new Logger(ChatGateway.name);
 
   @SubscribeMessage('message')
-  handleChatEvent(@MessageBody() message: string): string {
-    this.logger.log(message);
-    this.allMessages.push(message);
-    this.server.emit('newMessage', message);
-    return message + 'Hello';
+  handleChatEvent(
+      @MessageBody() message: string,
+      @ConnectedSocket() client:Socket): void {
+    const chatMessage = this.chatService.addMessage(message,client.id);
+    this.server.emit('newMessage', chatMessage);
   }
 
   @SubscribeMessage('nickname')
   handleNicknameEvent(
       @MessageBody() nickname: string,
       @ConnectedSocket() client:Socket): void {
-    this.clients.set(client.id,nickname);
-    this.logger.log('all nicknames: ');
-    this.clients.forEach((nickname: string, id: string) => {
-        this.logger.log(nickname+'  =>  '+id);
-    });
-
-    this.server.emit('clients',Array.from(this.clients.values()));
-
+          this.chatService.addClient(client.id,nickname);
+          this.server.emit('clients',this.chatService.getClients());
   }
 
   afterInit(server: any) {
@@ -49,15 +43,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect,OnG
   }
 
   handleConnection(client: Socket, ...args: any[]): any {
-    this.logger.log('client connect: ', client.id);
-    client.emit('allMessages',this.allMessages);
+    client.emit('allMessages',this.chatService.getMessages());
+    this.server.emit('clients',this.chatService.getClients());
   }
 
   handleDisconnect(client: Socket): any {
-    this.clients.delete(client.id);
-    this.logger.log('client disconnect: ');
-    this.clients.forEach((nickname: string, id: string) => {
-        this.logger.log(nickname+'  =>  '+id);
-    });
+    this.chatService.deleteClient(client.id);
+    this.server.emit('clients',this.chatService.getClients());
+
   }
 }
